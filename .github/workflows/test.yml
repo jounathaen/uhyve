@@ -43,10 +43,34 @@ jobs:
          cargo test --doc -- --nocapture
 
 
+  build-docker:
+    runs-on: [self-hosted]
+    steps:
+        - uses: actions/checkout@v1
+        - name: Print user
+          run: echo ${{ secrets.DOCKERUSER }}
+        - name: Login to DockerHub Registry
+          run:  docker login -u ${{ secrets.DOCKERUSER }} -p ${{ secrets.DOCKERTOKEN }}
+          #run: echo ${{ secrets.DOCKERTOKEN }} | docker login -u ${{ secrets.DOCKERUSER }} --password-stdin
+        - name: Get the version
+          id: vars
+          run: echo ::set-output name=tag::$(echo ${GITHUB_REF:10})
+        - name: Build the tagged Docker image
+          run: docker build . --file Dockerfile --tag jounathaen/uhyve:latest
+        - name: Push the tagged Docker image
+          run: docker push jounathaen/uhyve:latest
+
   kvm-full-test-suite:
     name: Rusty-Hermit Unit & KVM integration Tests
     runs-on: [self-hosted]
+    needs: build-docker
+    container:
+      image: jounathaen/uhyve:latest
+      options: '--device /dev/kvm'
+
     steps:
+    - name: List devices
+      run: ls /dev/
     - uses: hecrj/setup-rust-action@v1
       with:
          rust-version: nightly
