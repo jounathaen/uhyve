@@ -12,9 +12,8 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Multi-OS Cargo test
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
         os: [ubuntu-latest,macOS-latest]
@@ -28,67 +27,63 @@ jobs:
             rust: 'nightly'
             components: 'rustfmt, clippy'
             targets: 'x86_64-unknown-linux-musl'
-
-
     steps:
     - uses: hecrj/setup-rust-action@v1
-      with: 
+      with:
          rust-version: ${{ matrix.rust }}
          components: ${{ matrix.components || '' }}
          targets: ${{ matrix.targets || '' }}
     - uses: actions/checkout@v2.3.4
-      with:
-         submodules: true
-         fetch-depth: '0'
     - name: Check Cargo availability
       run: cargo --version
     - name: Test
-      run:
-         cargo test -- --nocapture
-    - name: Generate Test coverage
+      run: |
+        # Don't run integration tests here, as they require KVM
+         cargo test --lib -- --nocapture
+         cargo test --doc -- --nocapture
+
+
+  kvm-full-test-suite:
+    name: Rusty-Hermit Unit & KVM integration Tests
+    runs-on: [self-hosted]
+    container:
+      image: hermitcore/rustyhermit:nightly
+      options: '--device /dev/kvm'
+    steps:
+    - uses: hecrj/setup-rust-action@v1
+      with:
+         rust-version: nightly
+         components: 'rustfmt, clippy'
+         targets: 'x86_64-unknown-linux-gnu'
+    - uses: actions/checkout@v2.3.4
+    - name: Check Cargo availability
+      run: cargo --version
+    - name: Integration Tests
+      run: cargo test
+    - name: Generate integration test coverage
       run: |
         ./generate_test_coverage.sh --print-coverage
+    - name: Generate unit test coverage
+      run: |
         bash <(curl -s https://codecov.io/bash) -f
     - uses: codecov/codecov-action@v1.5.0
       with:
         files: ./coveralls.json
 
-  build:
-    name: Build
-    runs-on: ${{ matrix.os }}
 
-    strategy:
-      matrix:
-        os: [ubuntu-latest,macOS-latest]
-        rust: [nightly]
-        include:
-          - os: macOS-latest
-            rust: 'nightly'
-            components: 'rustfmt, clippy, rust-src'
-            targets: 'x86_64-apple-darwin'
-          - os: ubuntu-latest
-            rust: 'nightly'
-            components: 'rustfmt, clippy'
-            targets: 'x86_64-unknown-linux-musl'
-
-
+  fmt-check:
+    name: Format check
+    runs-on: ubuntu-latest
     steps:
-    - uses: hecrj/setup-rust-action@v1
-      with: 
-         rust-version: ${{ matrix.rust }}
-         components: ${{ matrix.components || '' }}
-         targets: ${{ matrix.targets || '' }}
-    - uses: actions/checkout@v2.3.4
-      with:
-         submodules: true
-    - name: Check Cargo availability
-      run: cargo --version
-    - name: Build
-      run:
-         cargo build
-    - name: Build with instrument feature
-      run:
-         cargo clean && RUSTFLAGS="-Z instrument-mcount" cargo build
-    - name: Compile, but don't run benchmarks
-      run:
-         cargo bench --no-run
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: 'nightly'
+          components: 'rustfmt'
+          targets: 'x86_64-unknown-linux-gnu'
+      - name: Checkout
+        uses: actions/checkout@v2.3.4
+      - name: Check Formatting
+        run: cargo fmt -- --check
+      - name: Check Integration Test Formatting
+        working-directory: ./tests/test-kernels
+        run: cargo fmt -- --check
