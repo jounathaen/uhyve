@@ -46,7 +46,13 @@ jobs:
   kvm-full-test-suite:
     name: Rusty-Hermit Unit & KVM integration Tests
     runs-on: [self-hosted]
+    container:
+      image: rust:slim-buster
+      options: '--device /dev/kvm'
+
     steps:
+    - name: List devices
+      run: ls /dev/
     - uses: hecrj/setup-rust-action@v1
       with:
          rust-version: nightly
