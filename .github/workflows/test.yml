@@ -46,6 +46,9 @@ jobs:
   kvm-full-test-suite:
     name: Rusty-Hermit Unit & KVM integration Tests
     runs-on: [self-hosted]
+    container:
+      image: hermitcore/rustyhermit:nightly
+      options: '--device /dev/kvm'
     steps:
     - uses: hecrj/setup-rust-action@v1
       with:
