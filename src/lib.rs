@@ -32,6 +32,8 @@ use std::sync::Arc;
 use std::thread;
 use vm::Vm;
 
+// UNNECESSARY COMMENT
+
 /// Creates a uhyve vm and runs the binary given by `path` in it.
 /// Blocks until the VM has finished execution.
 pub fn uhyve_run(
