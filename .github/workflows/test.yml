@@ -12,9 +12,8 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Multi-OS Cargo test
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
         os: [ubuntu-latest,macOS-latest]
@@ -28,67 +27,96 @@ jobs:
             rust: 'nightly'
             components: 'rustfmt, clippy'
             targets: 'x86_64-unknown-linux-musl'
-
-
     steps:
     - uses: hecrj/setup-rust-action@v1
-      with: 
+      with:
          rust-version: ${{ matrix.rust }}
          components: ${{ matrix.components || '' }}
          targets: ${{ matrix.targets || '' }}
     - uses: actions/checkout@v2.3.4
-      with:
-         submodules: true
-         fetch-depth: '0'
     - name: Check Cargo availability
       run: cargo --version
     - name: Test
-      run:
-         cargo test -- --nocapture
-    - name: Generate Test coverage
+      run: |
+        # Don't run integration tests here, as they require KVM
+         cargo test --lib -- --nocapture
+         cargo test --doc -- --nocapture
+
+
+  build-docker:
+    runs-on: [self-hosted]
+    steps:
+        - uses: actions/checkout@v1
+        - name: Login to Docker Hub
+          uses: docker/login-action@v1
+          with:
+            username: ${{ secrets.DOCKERUSER }}
+            password: ${{ secrets.DOCKERTOKEN }}
+        - run: echo $GITHUB_WORKSPACE
+        - name: Build the tagged Docker image
+          run: docker build . --file Dockerfile --tag docker.io/hermitcore/uhyve-ci:latest  --build-arg ci_project_dir=$GITHUB_WORKSPACE
+        - name: Push the tagged Docker image
+          run: docker push docker.io/hermitcore/uhyve-ci:latest
+
+  kvm-full-test-suite:
+    name: Rusty-Hermit Unit & KVM integration Tests
+    runs-on: [self-hosted]
+    needs: build-docker
+    container:
+      image: docker.io/hermitcore/uhyve-ci:latest
+      options: '--device /dev/kvm'
+
+    steps:
+    - name: Setup Debug Session
+      uses: csexton/debugger-action@master
+    #- uses: hecrj/setup-rust-action@v1
+      #with:
+         #rust-version: nightly
+         #components: 'rustfmt, clippy'
+         #targets: 'x86_64-unknown-linux-gnu'
+    - run: echo $GITHUB_WORKSPACE
+    - run: pwd
+    - run: ls -la
+    - run: ls -la /
+    - run: cp -r /target .
+    - run: cp -r /test-kernels-target tests/test-kernels/target
+    - run: ls -la
+    - run: git log -3
+    - name: Check Cargo availability
+      run: cargo --version
+    - run: cargo build
+
+    - uses: actions/checkout@v2.3.4
+      with:
+         clean: 'false'
+    - run: ls -la
+    - run: git log -3
+    - name: Integration Tests
+      run: cargo test
+    - name: Generate integration test coverage
       run: |
         ./generate_test_coverage.sh --print-coverage
+    - name: Generate unit test coverage
+      run: |
         bash <(curl -s https://codecov.io/bash) -f
     - uses: codecov/codecov-action@v1.5.0
       with:
         files: ./coveralls.json
 
-  build:
-    name: Build
-    runs-on: ${{ matrix.os }}
 
-    strategy:
-      matrix:
-        os: [ubuntu-latest,macOS-latest]
-        rust: [nightly]
-        include:
-          - os: macOS-latest
-            rust: 'nightly'
-            components: 'rustfmt, clippy, rust-src'
-            targets: 'x86_64-apple-darwin'
-          - os: ubuntu-latest
-            rust: 'nightly'
-            components: 'rustfmt, clippy'
-            targets: 'x86_64-unknown-linux-musl'
-
-
+  fmt-check:
+    name: Format check
+    runs-on: ubuntu-latest
     steps:
-    - uses: hecrj/setup-rust-action@v1
-      with: 
-         rust-version: ${{ matrix.rust }}
-         components: ${{ matrix.components || '' }}
-         targets: ${{ matrix.targets || '' }}
-    - uses: actions/checkout@v2.3.4
-      with:
-         submodules: true
-    - name: Check Cargo availability
-      run: cargo --version
-    - name: Build
-      run:
-         cargo build
-    - name: Build with instrument feature
-      run:
-         cargo clean && RUSTFLAGS="-Z instrument-mcount" cargo build
-    - name: Compile, but don't run benchmarks
-      run:
-         cargo bench --no-run
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: 'nightly'
+          components: 'rustfmt'
+          targets: 'x86_64-unknown-linux-gnu'
+      - name: Checkout
+        uses: actions/checkout@v2.3.4
+      - name: Check Formatting
+        run: cargo fmt -- --check
+      - name: Check Integration Test Formatting
+        working-directory: ./tests/test-kernels
+        run: cargo fmt -- --check
