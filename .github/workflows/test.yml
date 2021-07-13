@@ -67,6 +67,8 @@ jobs:
       options: '--device /dev/kvm'
 
     steps:
+    - name: Setup Debug Session
+      uses: csexton/debugger-action@master
     #- uses: hecrj/setup-rust-action@v1
       #with:
          #rust-version: nightly
@@ -75,11 +77,20 @@ jobs:
     - run: echo $GITHUB_WORKSPACE
     - run: pwd
     - run: ls -la
+    - run: ls -la /
+    - run: cp -r /target .
+    - run: cp -r /test-kernels-target tests/test-kernels/target
+    - run: ls -la
+    - run: git log -3
+    - name: Check Cargo availability
+      run: cargo --version
+    - run: cargo build
+
     - uses: actions/checkout@v2.3.4
       with:
          clean: 'false'
-    - name: Check Cargo availability
-      run: cargo --version
+    - run: ls -la
+    - run: git log -3
     - name: Integration Tests
       run: cargo test
     - name: Generate integration test coverage
